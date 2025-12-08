@@ -1,0 +1,1608 @@
+<!-- Version: v25 -->
+<!-- Date: 2025-12-08 -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolios</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <style>
+        body { 
+            background-color: #f8f9fa; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+        }
+        .card { 
+            border: none; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05); 
+            margin-bottom: 20px; 
+        }
+        .card-header { 
+            background-color: #fff; 
+            border-bottom: 1px solid #eee; 
+            font-weight: 600; 
+        }
+        .profit-pos { color: #198754; font-weight: bold; }
+        .profit-neg { color: #dc3545; font-weight: bold; }
+        .loading-overlay { 
+            position: fixed; 
+            top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(255,255,255,0.8); 
+            z-index: 9999; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+        }
+        .nav-tabs .nav-link { cursor: pointer; }
+        .summary-card { transition: transform 0.2s; }
+        .summary-card:hover { transform: translateY(-5px); }
+        .transition-icon { transition: transform 0.2s ease; display: inline-block; }
+        .modal-backdrop-custom { 
+            background: rgba(0,0,0,0.5); 
+            position: fixed; 
+            top: 0; left: 0; width: 100%; height: 100%; 
+            z-index: 1040; 
+        }
+        .note-indicator { 
+            font-size: 0.75rem; 
+            color: #6c757d; 
+            display: block; 
+            white-space: nowrap; 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+            max-width: 100px; 
+        }
+        .pagination { margin-bottom: 0; }
+        .page-link { cursor: pointer; }
+        .transfer-arrow { color: #0d6efd; font-weight: bold; margin: 0 5px; }
+        .btn-reconcile { opacity: 0.3; transition: opacity 0.2s; cursor: pointer; }
+        .btn-reconcile:hover { opacity: 1; color: #ffc107; }
+        
+        [v-cloak] { display: none; }
+    </style>
+</head>
+<body>
+
+<div id="app" v-cloak>
+    <div v-if="isLoading" class="loading-overlay">
+        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>
+    </div>
+
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-chart-pie me-2" style="font-size: 1.3em; vertical-align: middle;"></i>
+                Portfolios
+            </a>
+            
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            
+            <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
+                <div class="d-flex align-items-center gap-2 mt-2 mt-lg-0">
+                    <div class="dropdown">
+                        <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-download me-1"></i>导出
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" @click.prevent="exportJSON">导出 JSON</a></li>
+                            <li><a class="dropdown-item" href="#" @click.prevent="exportCSV">导出 CSV</a></li>
+                        </ul>
+                    </div>
+                    
+                    <label class="btn btn-outline-light btn-sm mb-0">
+                        <i class="fas fa-upload me-1"></i>导入 
+                        <input type="file" hidden @change="importData" accept=".json,.csv">
+                    </label>
+                    
+                    <button class="btn btn-light btn-sm text-primary" @click="showCloudModal=true">
+                        <i class="fas fa-cloud me-1"></i>云同步
+                    </button>
+
+                    <!-- 新增：设置按钮 -->
+                    <button class="btn btn-outline-light btn-sm" @click="showSettingsModal=true" title="系统设置">
+                        <i class="fas fa-cog"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- 顶部概览 -->
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="card summary-card bg-white text-dark">
+                    <div class="card-body">
+                        <h6 class="text-muted">总投入成本 (USDT)</h6>
+                        <h3>${{ formatNumber(totalCost) }}</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card summary-card bg-primary text-white">
+                    <div class="card-body">
+                        <h6 class="text-white-50">当前持仓总价值 (USDT)</h6>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h3>${{ formatNumber(totalCurrentValue) }}</h3>
+                            <button class="btn btn-sm btn-light text-primary" @click="fetchPrices">
+                                <i class="fas fa-sync-alt me-1"></i>更新现价
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card summary-card" :class="totalPnL >= 0 ? 'bg-success text-white' : 'bg-danger text-white'">
+                    <div class="card-body">
+                        <h6 class="text-white-50">总盈亏 (PnL)</h6>
+                        <h3>
+                            {{ totalPnL >= 0 ? '+' : '' }}{{ formatNumber(totalPnL) }} 
+                            <small style="font-size: 0.6em">({{ formatNumber(totalPnLPercent) }}%)</small>
+                        </h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- 左侧：录入表单 -->
+            <div class="col-lg-5">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span><i class="fas fa-edit me-2"></i>快速记账</span>
+                        <button class="btn btn-sm btn-link" @click="clearForm">重置</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">操作类型</label>
+                                <select class="form-select fw-bold" v-model="form.type" :class="getTypeClass(form.type)">
+                                    <option value="trade">💱 兑换 (Trade/Swap)</option>
+                                    <option value="transfer">📲 划转 (Transfer)</option>
+                                    <option value="buy">💰 入账 (Inflow)</option>
+                                    <option value="sell">💸 出账 (Outflow)</option>
+                                    <option value="reconcile">⚡ 校准 (Reconcile)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">时间</label>
+                                <input type="date" class="form-control" v-model="form.date">
+                            </div>
+
+                            <!-- 场景A：兑换 (Trade) -->
+                            <template v-if="form.type === 'trade'">
+                                <div class="col-md-12">
+                                    <div class="alert alert-light border p-2 mb-2 small">
+                                        <i class="fas fa-info-circle me-1"></i> 币币交换 (如 BTC换ETH, USDT换USDC)
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">平台/账户</label>
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" v-model="form.platform" placeholder="平台" list="platformList">
+                                        <input type="text" class="form-control" v-model="form.account" placeholder="账户" list="accountList">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label text-primary">总价值 (USDT估值)</label>
+                                    <input type="number" class="form-control" v-model.number="form.totalValue" step="any" placeholder="本次交易总值">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label text-danger">卖出 (Sell)</label>
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" v-model="form.fromCoin" placeholder="币种" @input="form.fromCoin = form.fromCoin.toUpperCase()">
+                                        <input type="number" class="form-control" v-model.number="form.fromAmount" placeholder="数量" step="any">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label text-success">买入 (Buy)</label>
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" v-model="form.toCoin" placeholder="币种" @input="form.toCoin = form.toCoin.toUpperCase()">
+                                        <input type="number" class="form-control" v-model.number="form.toAmount" placeholder="数量" step="any">
+                                    </div>
+                                </div>
+                            </template>
+
+                            <!-- 场景B：划转 (Transfer) -->
+                            <template v-if="form.type === 'transfer'">
+                                <div class="col-md-12">
+                                    <label class="form-label">币种</label>
+                                    <input type="text" class="form-control fw-bold" v-model="form.coin" placeholder="BTC" @input="form.coin = form.coin.toUpperCase()">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label text-danger">从 (From)</label>
+                                    <div class="input-group mb-1">
+                                        <input type="text" class="form-control" v-model="form.fromPlatform" placeholder="平台" list="platformList">
+                                        <input type="text" class="form-control" v-model="form.fromAccount" placeholder="账户" list="accountList">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label text-success">到 (To)</label>
+                                    <div class="input-group mb-1">
+                                        <input type="text" class="form-control" v-model="form.toPlatform" placeholder="平台" list="platformList">
+                                        <input type="text" class="form-control" v-model="form.toAccount" placeholder="账户" list="accountList">
+                                    </div>
+                                </div>
+                                <div class="col-md-12">
+                                    <label class="form-label">数量</label>
+                                    <input type="number" class="form-control" v-model.number="form.amount" step="any">
+                                </div>
+                            </template>
+
+                            <!-- 场景C：Inflow/Outflow -->
+                            <template v-if="form.type === 'buy' || form.type === 'sell'">
+                                <div class="col-md-4">
+                                    <label class="form-label">币种</label>
+                                    <input type="text" class="form-control fw-bold" v-model="form.coin" placeholder="USDT" @input="form.coin = form.coin.toUpperCase()">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">平台</label>
+                                    <input type="text" class="form-control" v-model="form.platform" placeholder="Binance" list="platformList">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">账户</label>
+                                    <input type="text" class="form-control" v-model="form.account" placeholder="现货" list="accountList">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">单价 (USDT)</label>
+                                    <input type="number" class="form-control" v-model.number="form.price" step="any" placeholder="输入价格">
+                            </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">数量</label>
+                                    <input type="number" class="form-control" v-model.number="form.amount" step="any">
+                                </div>
+                            </template>
+
+                            <!-- 场景D：校准 (Reconcile) -->
+                            <template v-if="form.type === 'reconcile'">
+                                <div class="col-md-12">
+                                    <div class="alert alert-warning border p-2 mb-2 small">
+                                        <i class="fas fa-bolt me-1"></i> 自动调整利息或磨损，生成 0 成本入/出账。
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">平台</label>
+                                    <input type="text" class="form-control" v-model="form.platform" placeholder="平台" list="platformList" @change="updateBookBalance">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">账户</label>
+                                    <input type="text" class="form-control" v-model="form.account" placeholder="账户" list="accountList" @change="updateBookBalance">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">币种</label>
+                                    <input type="text" class="form-control fw-bold" v-model="form.coin" placeholder="USDT" @input="form.coin = form.coin.toUpperCase(); updateBookBalance()">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">账面余额 (自动)</label>
+                                    <input type="text" class="form-control bg-light" :value="formatNumber(formBookBalance)" disabled readonly>
+                                </div>
+                                <div class="col-md-12">
+                                    <label class="form-label text-primary fw-bold">实际余额 (交易所)</label>
+                                    <input type="number" class="form-control form-control-lg" v-model.number="form.actualBalance" step="any" placeholder="输入当前实际余额">
+                                </div>
+                                <div class="col-md-12 text-center small" v-if="reconcileDelta !== 0">
+                                    <span :class="reconcileDelta > 0 ? 'text-success' : 'text-danger'">
+                                        <i class="fas" :class="reconcileDelta > 0 ? 'fa-arrow-up' : 'fa-arrow-down'"></i>
+                                        将自动{{ reconcileDelta > 0 ? '入账' : '出账' }} <strong>{{ formatNumber(Math.abs(reconcileDelta)) }}</strong>
+                                    </span>
+                                </div>
+                            </template>
+
+                            <!-- 手续费与备注 (Reconcile模式不显示手续费) -->
+                            <div class="col-md-6" v-if="form.type !== 'reconcile'">
+                                <label class="form-label">手续费</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" v-model.number="form.fee" step="any">
+                                    <select class="form-select" style="max-width: 90px; font-size: 0.9rem;" v-model="form.feeUnit">
+                                        <option value="USDT">USDT</option>
+                                        <option value="coin">Coin</option>
+                                    </select>
+                                </div>
+                                <div class="form-text small">
+                                    <span v-if="form.type==='transfer'">注: 从来源账户扣除</span>
+                                    <span v-if="form.type==='trade'">注: 若Coin，从买入币种扣除</span>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">备注</label>
+                                <input type="text" class="form-control" v-model="form.note" :placeholder="form.type==='reconcile'?'自动生成...':''">
+                            </div>
+
+                            <div class="col-12 mt-3">
+                                <button class="btn w-100" :class="getBtnClass(form.type)" @click="addTransaction" :disabled="form.type==='reconcile' && reconcileDelta===0">
+                                    <i class="fas me-2" :class="getBtnIcon(form.type)"></i>
+                                    {{ getBtnText(form.type) }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 交易明细列表 -->
+                <div class="card mt-3">
+                    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div><i class="fas fa-list me-2"></i>交易明细</div>
+                            <div class="d-flex gap-2 ms-auto" style="width: 60%;">
+                                <select class="form-select form-select-sm" style="width: 100px;" v-model="pageSize">
+                                <option :value="10">10/页</option>
+                                <option :value="20">20/页</option>
+                                <option :value="50">50/页</option>
+                                </select>
+                            <input type="text" class="form-control form-control-sm" placeholder="搜索..." v-model="searchQuery">
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <table class="table table-hover table-striped mb-0" style="font-size: 0.9rem;">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>类型/时间</th>
+                                    <th>详情</th>
+                                    <th>平台/账户</th>
+                                    <th class="text-end">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="tx in paginatedTransactions" :key="tx.id">
+                                    <td>
+                                        <!-- 显示主币种 -->
+                                        <strong v-if="tx.type==='trade'">{{ tx.fromCoin }} <i class="fas fa-caret-right"></i> {{ tx.toCoin }}</strong>
+                                        <strong v-else>{{ tx.coin }}</strong>
+                                        <span :class="getTypeClass(tx.type, true)" class="fw-bold ms-1" style="font-size:0.8em">
+                                            {{ getTypeName(tx.type) }}
+                                        </span>
+                                        <div class="text-muted small">{{ tx.date }}</div>
+                                    </td>
+                                    <td>
+                                        <!-- 不同的详情显示 -->
+                                        <div v-if="tx.type === 'buy' || tx.type === 'sell'">
+                                            P: {{ tx.price }}<br>Q: {{ tx.amount }}
+                                        </div>
+                                        <div v-else-if="tx.type === 'trade'">
+                                            卖: {{ tx.fromAmount }} {{ tx.fromCoin }}<br>
+                                            买: {{ tx.toAmount }} {{ tx.toCoin }}
+                                            <div class="text-muted small">值: ${{ tx.totalValue }}</div>
+                                        </div>
+                                        <div v-else>
+                                        Q: {{ tx.amount }}
+                                        </div>
+                                        <div v-if="tx.fee > 0" class="text-muted small">Fee: {{tx.fee}} {{tx.feeUnit}}</div>
+                                    </td>
+                                    <td>
+                                        <div v-if="tx.type === 'transfer'">
+                                            {{ tx.fromPlatform }} <span class="small text-muted">({{tx.fromAccount}})</span>
+                                            <i class="fas fa-arrow-right transfer-arrow"></i><br>
+                                            {{ tx.toPlatform }} <span class="small text-muted">({{tx.toAccount}})</span>
+                                        </div>
+                                        <div v-else>
+                                        {{ tx.platform }} <span class="text-muted small">{{ tx.account }}</span>
+                                        </div>
+                                        <div v-if="tx.note" class="note-indicator" :title="tx.note">
+                                            <i class="fas fa-sticky-note me-1 text-warning"></i>{{ tx.note }}
+                                        </div>
+                                    </td>
+                                    <td class="text-end">
+                                        <button class="btn btn-sm btn-outline-secondary border-0 me-1" @click="openEditModalFunc(tx)" title="编辑">
+                                            <i class="fas fa-pen-to-square"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger border-0" @click="deleteTransaction(tx.id)" title="删除">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                <tr v-if="filteredTransactions.length === 0">
+                                    <td colspan="4" class="text-center text-muted py-3">暂无记录</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card-footer d-flex justify-content-between align-items-center p-2" v-if="filteredTransactions.length > 0">
+                        <div class="small text-muted">共 {{ filteredTransactions.length }} 条</div>
+                        <nav>
+                            <ul class="pagination pagination-sm mb-0">
+                                <li class="page-item" :class="{ disabled: currentPage === 1 }">
+                                    <a class="page-link" @click="currentPage--"><i class="fas fa-chevron-left"></i></a>
+                                </li>
+                                <li class="page-item active"><span class="page-link">{{ currentPage }} / {{ totalPages }}</span></li>
+                                <li class="page-item" :class="{ disabled: currentPage === totalPages }">
+                                    <a class="page-link" @click="currentPage++"><i class="fas fa-chevron-right"></i></a>
+                                </li>
+                            </ul>
+                        </nav>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧汇总 -->
+            <div class="col-lg-7">
+                <div class="card">
+                    <div class="card-header">
+                        <ul class="nav nav-tabs card-header-tabs">
+                            <li class="nav-item">
+                                <a class="nav-link" :class="{active: viewMode === 'coin'}" @click="viewMode = 'coin'">按|币种|汇总</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" :class="{active: viewMode === 'coin_location'}" @click="viewMode = 'coin_location'">按|币种-平台-账户|汇总</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" :class="{active: viewMode === 'location'}" @click="viewMode = 'location'" title="平台 + 账户">按|平台-账户|汇总</a>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="card-body">
+                        <!-- 筛选器 -->
+                        <div class="row mb-3 g-2" v-if="viewMode !== 'coin'">
+                            <div class="col-auto">
+                                <select class="form-select form-select-sm" v-model="filterCoin">
+                                    <option value="">所有币种</option>
+                                    <option v-for="c in uniqueCoins" :value="c">{{ c }}</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>名称</th>
+                                        <th class="text-end">持仓数量</th>
+                                        <th class="text-end">平均成本</th>
+                                        <th class="text-end">现价 (U)</th>
+                                        <th class="text-end">当前价值</th>
+                                        <th class="text-end">盈亏</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template v-for="item in summaryData" :key="item.name">
+                                        <!-- 分组标题行 -->
+                                        <tr v-if="item.isGroup" @click="toggleExpand(item.name)" style="cursor: pointer;" class="table-light">
+                                            <td>
+                                                <i class="fas fa-caret-right me-2 transition-icon" :style="{transform: expandedKeys[item.name] ? 'rotate(90deg)' : 'rotate(0deg)'}"></i>
+                                                <span class="fw-bold text-primary">{{ item.name }}</span>
+                                                <span class="badge bg-secondary ms-2" style="font-size: 0.7em">{{ item.children.length }} {{ viewMode==='location'?'币种':'账户' }}</span>
+                                            </td>
+                                            <td></td><td></td><td></td>
+                                            <td class="text-end fw-bold">${{ formatNumber(item.currentValue) }}</td>
+                                            <td class="text-end" :class="item.pnl >= 0 ? 'profit-pos' : 'profit-neg'">
+                                                {{ formatNumber(item.pnl) }}
+                                            </td>
+                                        </tr>
+                                        <!-- 展开详情行 -->
+                                        <tr v-if="item.isGroup && expandedKeys[item.name]" v-for="child in item.children" :key="child.name" style="background-color: #fcfcfc;">
+                                            <td class="text-end pe-4">
+                                                <span class="fw-bold">{{ child.name }}</span>
+                                                <!-- 快捷校准按钮 (仅在按平台-账户视图显示) -->
+                                                <i v-if="viewMode === 'location'" class="fas fa-bolt text-warning ms-2 btn-reconcile" 
+                                                   @click.stop="openReconcileModal(child, item.name)" 
+                                                   title="快速校准余额"></i>
+                                            </td>
+                                            <td class="text-end">{{ formatNumber(child.amount) }}</td>
+                                            <td class="text-end text-muted">${{ formatNumber(child.avgCost) }}</td>
+                                            <td class="text-end text-primary">${{ formatNumber(child.currentPrice) }}</td>
+                                            <td class="text-end">${{ formatNumber(child.currentValue) }}</td>
+                                            <td class="text-end" :class="child.pnl >= 0 ? 'profit-pos' : 'profit-neg'">{{ formatNumber(child.pnl) }}</td>
+                                        </tr>
+                                        <!-- 纯币种视图行 -->
+                                        <tr v-if="!item.isGroup">
+                                            <td class="fw-bold">{{ item.name }}</td>
+                                            <td class="text-end">{{ formatNumber(item.amount) }}</td>
+                                            <td class="text-end text-muted">${{ formatNumber(item.avgCost) }}</td>
+                                            <td class="text-end text-primary">${{ formatNumber(item.currentPrice) }}</td>
+                                            <td class="text-end fw-bold">${{ formatNumber(item.currentValue) }}</td>
+                                            <td class="text-end" :class="item.pnl >= 0 ? 'profit-pos' : 'profit-neg'">
+                                                {{ formatNumber(item.pnl) }}<br><small>{{ formatNumber(item.pnlPercent) }}%</small>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                    <tr v-if="summaryData.length === 0">
+                                        <td colspan="6" class="text-center py-4">无数据</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <datalist id="platformList"><option v-for="p in uniquePlatforms" :value="p"></datalist>
+        <datalist id="accountList"><option v-for="a in uniqueAccounts" :value="a"></datalist>
+    </div>
+
+    <!-- ⚡ 余额校准 Modal (仅用于快捷入口) -->
+    <div v-if="showReconcileModal" class="modal fade show" tabindex="-1" style="display: block; background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content shadow">
+                <div class="modal-header bg-warning bg-opacity-10">
+                    <h5 class="modal-title text-warning-emphasis"><i class="fas fa-bolt me-2"></i>智能余额校准</h5>
+                    <button type="button" class="btn-close" @click="showReconcileModal=false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-light border small">
+                        此功能用于调整理财生息、空投或磨损导致的余额微小差异。系统会自动生成一笔 <strong>0成本</strong> 的入账或出账。
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-12">
+                            <strong>{{ reconcileForm.platform }} / {{ reconcileForm.account }}</strong>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small text-muted">币种</label>
+                            <input type="text" class="form-control fw-bold" v-model="reconcileForm.coin" disabled>
+                        </div>
+                        <div class="col-md-12">
+                            <div class="card bg-light border-0">
+                                <div class="card-body py-2 d-flex justify-content-between align-items-center">
+                                    <span class="text-muted">当前账面余额:</span>
+                                    <span class="fw-bold">{{ formatNumber(reconcileData.current) }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-12">
+                            <label class="form-label text-primary fw-bold">实际交易所余额</label>
+                            <input type="number" class="form-control form-control-lg" v-model.number="reconcileForm.actual" step="any" @input="calcReconcile">
+                        </div>
+
+                        <div class="col-md-12 text-center" v-if="reconcileData.diff !== 0">
+                            <div :class="reconcileData.diff > 0 ? 'text-success' : 'text-danger'">
+                                将自动记录: 
+                                <strong v-if="reconcileData.diff > 0">入账 +{{ formatNumber(reconcileData.diff) }}</strong>
+                                <strong v-else>出账 {{ formatNumber(reconcileData.diff) }}</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-top-0">
+                    <button type="button" class="btn btn-secondary" @click="showReconcileModal=false">取消</button>
+                    <button type="button" class="btn btn-warning" @click="submitReconcile" :disabled="reconcileData.diff === 0">
+                        <i class="fas fa-check me-1"></i>确认校准
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑模态框 -->
+    <div v-if="showEditModal" class="modal fade show" tabindex="-1" style="display: block; background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content shadow">
+                <div class="modal-header bg-light">
+                    <h5 class="modal-title"><i class="fas fa-edit me-2 text-primary"></i>修改交易记录</h5>
+                    <button type="button" class="btn-close" @click="showEditModal=false"></button>
+                </div>
+                <div class="modal-body" v-if="editingTx">
+                    <div class="row g-3">
+                        <div class="col-md-12">
+                            <label class="form-label small text-muted">类型</label>
+                            <select class="form-select" v-model="editingTx.type">                                
+                                <option value="trade">💱 兑换 (Trade/Swap)</option>
+                                <option value="transfer">📲 划转 (Transfer)</option>
+                                <option value="buy">💰 入账 (Inflow)</option>
+                                <option value="sell">💸 出账 (Outflow)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small text-muted">日期</label>
+                            <input type="date" class="form-control" v-model="editingTx.date">
+                        </div>
+
+                        <!-- Inflow/Outflow 模式 -->
+                        <template v-if="editingTx.type === 'buy' || editingTx.type === 'sell'">
+                            <div class="col-md-4">
+                                <label class="small text-muted">币种</label>
+                                <input type="text" class="form-control fw-bold" v-model="editingTx.coin">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="small text-muted">平台</label>
+                                <input type="text" class="form-control" v-model="editingTx.platform" list="platformList">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="small text-muted">账户</label>
+                                <input type="text" class="form-control" v-model="editingTx.account" list="accountList">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="small text-muted">单价</label>
+                                <input type="number" class="form-control" v-model.number="editingTx.price" step="any">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="small text-muted">数量</label>
+                                <input type="number" class="form-control" v-model.number="editingTx.amount" step="any">
+                            </div>
+                        </template>
+                        
+                        <!-- Transfer 模式 -->
+                        <template v-if="editingTx.type === 'transfer'">
+                            <div class="col-md-12">
+                                <label class="small text-muted">币种</label>
+                                <input type="text" class="form-control fw-bold" v-model="editingTx.coin">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="small text-muted">从</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" v-model="editingTx.fromPlatform">
+                                    <input type="text" class="form-control" v-model="editingTx.fromAccount">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="small text-muted">到</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" v-model="editingTx.toPlatform">
+                                    <input type="text" class="form-control" v-model="editingTx.toAccount">
+                                </div>
+                            </div>
+                            <div class="col-md-12">
+                                <label class="small text-muted">数量</label>
+                                <input type="number" class="form-control" v-model.number="editingTx.amount" step="any">
+                            </div>
+                        </template>
+
+                        <!-- Trade 模式 -->
+                        <template v-if="editingTx.type === 'trade'">
+                            <div class="col-md-6">
+                                <label class="small text-muted">平台</label>
+                                <input type="text" class="form-control" v-model="editingTx.platform" list="platformList">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="small text-muted">账户</label>
+                                <input type="text" class="form-control" v-model="editingTx.account" list="accountList">
+                            </div>
+                            <div class="col-md-12">
+                                <label class="small text-muted text-primary">总价值 (USDT)</label>
+                                <input type="number" class="form-control" v-model.number="editingTx.totalValue" step="any">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="small text-muted text-danger">卖出</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" v-model="editingTx.fromCoin">
+                                    <input type="number" class="form-control" v-model.number="editingTx.fromAmount">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="small text-muted text-success">买入</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" v-model="editingTx.toCoin">
+                                    <input type="number" class="form-control" v-model.number="editingTx.toAmount">
+                                </div>
+                            </div>
+                        </template>
+
+                        <div class="col-md-12">
+                            <label class="form-label small text-muted">手续费</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" v-model.number="editingTx.fee" step="any">
+                                <select class="form-select" style="max-width:120px" v-model="editingTx.feeUnit">
+                                    <option value="USDT">USDT</option>
+                                    <option value="coin">Coin</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="small text-muted">备注</label>
+                            <textarea class="form-control" v-model="editingTx.note" rows="2"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary" @click="showEditModal=false">取消</button>
+                    <button type="button" class="btn btn-primary" @click="saveEdit"><i class="fas fa-save me-1"></i>保存修改</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 云同步 Modal -->
+    <div v-if="showCloudModal" class="modal-backdrop-custom">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">WebDAV 同步</h5>
+                    <button type="button" class="btn-close" @click="showCloudModal=false"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="text" class="form-control mb-2" v-model="webdav.url" placeholder="URL">
+                    <input type="text" class="form-control mb-2" v-model="webdav.user" placeholder="Username">
+                    <input type="password" class="form-control mb-3" v-model="webdav.password" placeholder="Password">
+                    <div class="d-flex justify-content-between">
+                        <button class="btn btn-success" @click="cloudUpload">上传</button>
+                        <button class="btn btn-warning" @click="cloudDownload">下载</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ⚡ 系统设置 Modal (新增) -->
+    <div v-if="showSettingsModal" class="modal fade show" tabindex="-1" style="display: block; background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content shadow">
+                <div class="modal-header bg-secondary bg-opacity-10">
+                    <h5 class="modal-title"><i class="fas fa-cog me-2"></i>系统设置</h5>
+                    <button type="button" class="btn-close" @click="showSettingsModal=false"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label fw-bold">Cloudflare Worker 代理地址</label>
+                    <input type="text" class="form-control mb-2" v-model="proxyConfig.url" placeholder="https://your-worker.workers.dev/">
+                    <div class="form-text small text-muted">
+                        <i class="fas fa-shield-alt me-1"></i>此地址仅保存在本地浏览器缓存中，用于获取交易所现价。若为空，将无法更新价格。
+                    </div>
+                </div>
+                <div class="modal-footer border-top-0">
+                    <button type="button" class="btn btn-primary" @click="showSettingsModal=false">完成</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    const { createApp, ref, computed, reactive, onMounted, watch } = Vue;
+    createApp({
+        setup() {
+            // 1. Define State Variables (Strictly defined first)
+            const transactions = ref([]);
+            const prices = ref({}); 
+            const isLoading = ref(false);
+            const showCloudModal = ref(false);
+            const showEditModal = ref(false);
+            const showReconcileModal = ref(false);
+            const showSettingsModal = ref(false); // New
+            const editingTx = ref(null);
+            const searchQuery = ref("");
+            const viewMode = ref("coin"); 
+            const filterCoin = ref("");
+            const expandedKeys = reactive({});
+            const currentPage = ref(1);
+            const pageSize = ref(10);
+            
+            // Reconcile variables
+            const formBookBalance = ref(0);
+
+            const form = reactive({
+                type: 'trade', 
+                coin: '', date: new Date().toISOString().split('T')[0],
+                price: '', amount: '', fee: 0, feeUnit: 'USDT', 
+                platform: '', account: '', 
+                fromPlatform: '', fromAccount: '', toPlatform: '', toAccount: '',
+                fromCoin: '', fromAmount: '', toCoin: '', toAmount: '', totalValue: '',
+                note: '',
+                actualBalance: '' 
+            });
+
+            const reconcileForm = reactive({ platform: '', account: '', coin: '', actual: '' });
+            const reconcileData = reactive({ current: 0, diff: 0 });
+
+            const webdav = reactive({
+                url: localStorage.getItem('wd_url') || '',
+                user: localStorage.getItem('wd_user') || '',
+                password: localStorage.getItem('wd_pass') || ''
+            });
+
+            // New: Proxy Configuration
+            const proxyConfig = reactive({
+                url: localStorage.getItem('custom_proxy_url') || '' 
+            });
+
+            // 2. Helper Functions (Defined strictly BEFORE computed properties)
+
+            const getGroupKey = (platform, account, mode = viewMode.value) => {
+                if (mode === 'location' || mode === 'coin_location') {
+                    return (platform || '未知平台') + (account ? ` (${account})` : '');
+                }
+                return ''; 
+            };
+
+            // Standardize data structure for export
+            // Ensures that even old records have all fields present (as empty strings)
+            const standardizeTransactions = (txs) => {
+                const allFields = [
+                    'id', 'date', 'type', 
+                    'coin', 'platform', 'account', 'price', 'amount', 
+                    'fee', 'feeUnit', 'note',
+                    'fromPlatform', 'fromAccount', 'toPlatform', 'toAccount', 
+                    'fromCoin', 'fromAmount', 'toCoin', 'toAmount', 'totalValue',
+                    'actualBalance'
+                ];
+                
+                return txs.map(t => {
+                    const newObj = {};
+                    allFields.forEach(field => {
+                        newObj[field] = (t[field] !== undefined && t[field] !== null) ? t[field] : '';
+                    });
+                    return newObj;
+                });
+            };
+
+            // Cost Removal Helper: Calculates proportional cost to remove
+            const getCostRemoval = (group, coin, locName, amtToRemove) => {
+                if (!group || !group.childrenMap[locName]) return 0;
+                const child = group.childrenMap[locName];
+                if (child.amount > 0) {
+                    return (child.totalCost / child.amount) * amtToRemove;
+                }
+                return 0;
+            };
+
+            // Logic for "Coin -> Platform-Account" View (Distribution View)
+            const calculateCoinLocationStats = (groups, t) => {
+                const getLoc = (p, a) => (p || '未知平台') + (a ? ` (${a})` : '');
+                
+                const process = (coin, locName, amt, cost) => {
+                    if (!groups[coin]) groups[coin] = { name: coin, isGroup: true, childrenMap: {} };
+                    const group = groups[coin];
+                    if (!group.childrenMap[locName]) {
+                        group.childrenMap[locName] = { 
+                            name: locName, 
+                            amount: 0, 
+                            totalCost: 0, 
+                            coinSymbol: coin 
+                        };
+                    }
+                    group.childrenMap[locName].amount += amt;
+                    group.childrenMap[locName].totalCost += cost;
+                };
+
+                if (t.type === 'buy') {
+                    const amt = t.amount - (t.feeUnit === 'coin' ? t.fee : 0);
+                    const cost = (t.price * t.amount) + (t.feeUnit === 'USDT' ? t.fee : 0);
+                    process(t.coin, getLoc(t.platform, t.account), amt, cost);
+                }
+                else if (t.type === 'sell') {
+                    const loc = getLoc(t.platform, t.account);
+                    const costRemoved = getCostRemoval(groups[t.coin], t.coin, loc, t.amount);
+                    process(t.coin, loc, -t.amount, -costRemoved);
+                }
+                else if (t.type === 'transfer') {
+                    const srcLoc = getLoc(t.fromPlatform, t.fromAccount);
+                    const dstLoc = getLoc(t.toPlatform, t.toAccount);
+                    const fee = (t.feeUnit === 'coin' ? t.fee : 0);
+                    
+                    // Logic Update: Check balance to decide if fee is additive or inclusive
+                    let currentSrcBalance = 0;
+                    if (groups[t.coin] && groups[t.coin].childrenMap[srcLoc]) {
+                        currentSrcBalance = groups[t.coin].childrenMap[srcLoc].amount;
+                    }
+                    
+                    let deductAmt = 0;
+                    let addAmt = 0;
+
+                    // If user tries to send more than (balance - fee), it means fee must be inside amount
+                    // Using a small epsilon for float comparison safety
+                    if (fee > 0 && currentSrcBalance < (t.amount + fee - 0.00000001)) {
+                        // Scenario 2: Full Transfer (Fee included in amount)
+                        deductAmt = t.amount;
+                        addAmt = t.amount - fee;
+                    } else {
+                        // Scenario 1: Partial Transfer (Fee deducted on top)
+                        deductAmt = t.amount + fee;
+                        addAmt = t.amount;
+                    }
+                    
+                    const costTransferred = getCostRemoval(groups[t.coin], t.coin, srcLoc, deductAmt);
+                    
+                    process(t.coin, srcLoc, -deductAmt, -costTransferred);
+                    process(t.coin, dstLoc, addAmt, costTransferred); 
+                }
+                else if (t.type === 'trade') {
+                    const srcLoc = getLoc(t.platform, t.account);
+                    
+                    // Sell Side
+                    const costRemoved = getCostRemoval(groups[t.fromCoin], t.fromCoin, srcLoc, t.fromAmount);
+                    process(t.fromCoin, srcLoc, -t.fromAmount, -costRemoved);
+                    
+                    // Buy Side
+                    let finalTo = t.toAmount; 
+                    if(t.feeUnit === 'coin') finalTo -= t.fee;
+                    const costAdded = t.totalValue + (t.feeUnit==='USDT'?t.fee:0);
+                    process(t.toCoin, srcLoc, finalTo, costAdded);
+                }
+            };
+
+            // Logic for "Platform-Account" View (Location View)
+            const calculateGroupStats = (groups, t) => {
+                const getKey = (p, a) => (p || '未知平台') + (a ? ` (${a})` : '');
+                
+                const getGroup = (key) => {
+                    if (!groups[key]) {
+                        groups[key] = { name: key, isGroup: true, childrenMap: {} }; 
+                    }
+                    return groups[key];
+                };
+                
+                const process = (group, coin, changeAmount, costChange) => {
+                    if (!group.childrenMap[coin]) {
+                        group.childrenMap[coin] = { name: coin, amount: 0, totalCost: 0, coinSymbol: coin };
+                    }
+                    group.childrenMap[coin].amount += changeAmount;
+                    group.childrenMap[coin].totalCost += costChange;
+                };
+
+                // Helper within group scope
+                const getGroupCostRemoval = (group, coin, amt) => {
+                    if (group.childrenMap[coin] && group.childrenMap[coin].amount > 0) {
+                        return (group.childrenMap[coin].totalCost / group.childrenMap[coin].amount) * amt;
+                    }
+                    return 0;
+                };
+
+                if (t.type === 'buy') {
+                    const key = getKey(t.platform, t.account);
+                    const cost = (t.price * t.amount) + (t.feeUnit === 'USDT' ? t.fee : 0);
+                    const amt = t.amount - (t.feeUnit === 'coin' ? t.fee : 0);
+                    process(getGroup(key), t.coin, amt, cost);
+                } 
+                else if (t.type === 'sell') {
+                    const key = getKey(t.platform, t.account);
+                    const group = getGroup(key);
+                    const costRemoved = getGroupCostRemoval(group, t.coin, t.amount);
+                    process(group, t.coin, -t.amount, -costRemoved);
+                }
+                else if (t.type === 'transfer') {
+                    const srcKey = getKey(t.fromPlatform, t.fromAccount); 
+                    const dstKey = getKey(t.toPlatform, t.toAccount);
+                    if (srcKey && dstKey) {
+                        const srcGroup = getGroup(srcKey);
+                        const dstGroup = getGroup(dstKey);
+                        const fee = (t.feeUnit === 'coin' ? t.fee : 0);
+                        
+                        // Logic Update: Check balance here too
+                        let currentBalance = 0;
+                        if (srcGroup.childrenMap[t.coin]) {
+                            currentBalance = srcGroup.childrenMap[t.coin].amount;
+                        }
+                        
+                        let deductAmt = 0;
+                        let addAmt = 0;
+                        
+                        if (fee > 0 && currentBalance < (t.amount + fee - 0.00000001)) {
+                            // Scenario 2: Fee inside Amount
+                            deductAmt = t.amount;
+                            addAmt = t.amount - fee;
+                        } else {
+                            // Scenario 1: Fee on top
+                            deductAmt = t.amount + fee;
+                            addAmt = t.amount;
+                        }
+                        
+                        const costTransferred = getGroupCostRemoval(srcGroup, t.coin, deductAmt);
+                        
+                        process(srcGroup, t.coin, -deductAmt, -costTransferred);
+                        process(dstGroup, t.coin, addAmt, costTransferred);
+                    }
+                }
+                else if (t.type === 'trade') {
+                    const key = getKey(t.platform, t.account); 
+                    const group = getGroup(key);
+                    
+                    const costRemoved = getGroupCostRemoval(group, t.fromCoin, t.fromAmount);
+                    process(group, t.fromCoin, -t.fromAmount, -costRemoved);
+                    
+                    let finalTo = t.toAmount; 
+                    if(t.feeUnit === 'coin') finalTo -= t.fee;
+                    process(group, t.toCoin, finalTo, (t.totalValue + (t.feeUnit==='USDT'?t.fee:0)));
+                }
+            };
+
+            // Logic for Global Coin View (Fixes for Fees & Dust)
+            const calculateStats = (map, t) => {
+                const initCoin = (c) => { 
+                    if (!map[c]) {
+                        map[c] = { name: c, amount: 0, totalCost: 0, coinSymbol: c }; 
+                    }
+                };
+                
+                if (t.type === 'buy') { 
+                    initCoin(t.coin); 
+                    const val = t.price * t.amount;
+                    if (t.feeUnit === 'coin') { 
+                        map[t.coin].amount += (t.amount - t.fee); 
+                        map[t.coin].totalCost += val; 
+                    } else { 
+                        map[t.coin].amount += t.amount; 
+                        map[t.coin].totalCost += (val + t.fee); 
+                    }
+                } 
+                else if (t.type === 'sell') { 
+                    initCoin(t.coin);
+                    if (map[t.coin].amount > 0) { 
+                        map[t.coin].totalCost -= (map[t.coin].totalCost / map[t.coin].amount) * t.amount; 
+                    }
+                    map[t.coin].amount -= t.amount;
+                }
+                else if (t.type === 'transfer') {
+                    initCoin(t.coin); 
+                    if (t.feeUnit === 'coin') {
+                        // FIX: Reduce cost proportionally when fee is taken from coin
+                        if (map[t.coin].amount > 0) {
+                            map[t.coin].totalCost -= (map[t.coin].totalCost / map[t.coin].amount) * t.fee;
+                        }
+                        map[t.coin].amount -= t.fee;
+                    }
+                }
+                else if (t.type === 'trade') {
+                    initCoin(t.fromCoin); 
+                    initCoin(t.toCoin);
+                    if (map[t.fromCoin].amount > 0) { 
+                        map[t.fromCoin].totalCost -= (map[t.fromCoin].totalCost / map[t.fromCoin].amount) * t.fromAmount; 
+                    }
+                    map[t.fromCoin].amount -= t.fromAmount;
+                    let finalToAmount = t.toAmount;
+                    if(t.feeUnit === 'coin') finalToAmount -= t.fee;
+                    map[t.toCoin].amount += finalToAmount; 
+                    map[t.toCoin].totalCost += (t.totalValue + (t.feeUnit==='USDT'?t.fee:0));
+                }
+
+                // Dust Cleanup
+                if (map[t.coin] && Math.abs(map[t.coin].amount) < 0.00000001) {
+                    map[t.coin].amount = 0;
+                    map[t.coin].totalCost = 0;
+                }
+                if (t.fromCoin && map[t.fromCoin] && Math.abs(map[t.fromCoin].amount) < 0.00000001) {
+                    map[t.fromCoin].amount = 0;
+                    map[t.fromCoin].totalCost = 0;
+                }
+            };
+
+            const calcBalanceForLocation = (plat, acc, c) => {
+                if (!plat || !acc || !c) return 0;
+                const groups = {};
+                
+                // Important: Sort transactions first to ensure correct cost flow
+                const sortedTxs = [...transactions.value].sort((a,b) => new Date(a.date) - new Date(b.date));
+                
+                sortedTxs.forEach(t => calculateGroupStats(groups, t));
+                
+                const key = (plat || '未知平台') + (acc ? ` (${acc})` : '');
+                const group = groups[key];
+                if (group && group.childrenMap[c]) {
+                    return parseFloat(group.childrenMap[c].amount.toFixed(8));
+                }
+                return 0;
+            };
+
+            // 3. Computed Properties
+            const sortedTransactions = computed(() => {
+                // Global sort ensures history is processed in chronological order
+                return [...transactions.value].sort((a,b) => new Date(a.date) - new Date(b.date));
+            });
+
+            const uniquePlatforms = computed(() => {
+                const s = new Set();
+                transactions.value.forEach(t => {
+                    if(t.platform) s.add(t.platform);
+                    if(t.fromPlatform) s.add(t.fromPlatform);
+                    if(t.toPlatform) s.add(t.toPlatform);
+                });
+                return [...s];
+            });
+
+            const uniqueAccounts = computed(() => {
+                const s = new Set();
+                transactions.value.forEach(t => {
+                    if(t.account) s.add(t.account);
+                    if(t.fromAccount) s.add(t.fromAccount);
+                    if(t.toAccount) s.add(t.toAccount);
+                });
+                return [...s];
+            });
+
+            const uniqueCoins = computed(() => {
+                const s = new Set();
+                transactions.value.forEach(t => {
+                    if(t.coin) s.add(t.coin);
+                    if(t.fromCoin) s.add(t.fromCoin);
+                    if(t.toCoin) s.add(t.toCoin);
+                });
+                return [...s];
+            });
+
+            // Fixed Search (Haystack Method)
+            const filteredTransactions = computed(() => {
+                const q = searchQuery.value.toLowerCase().trim();
+                if (!q) return sortedTransactions.value;
+
+                return sortedTransactions.value.filter(t => {
+                    const content = [
+                        t.coin, t.platform, t.account, 
+                        t.fromCoin, t.toCoin, 
+                        t.fromPlatform, t.fromAccount, 
+                        t.toPlatform, t.toAccount, 
+                        t.note
+                    ].map(val => (val || '').toString().toLowerCase()).join(' ');
+                    
+                    return content.includes(q);
+                });
+            });
+
+            const totalPages = computed(() => Math.ceil(filteredTransactions.value.length / pageSize.value) || 1);
+            const paginatedTransactions = computed(() => {
+                const start = (currentPage.value - 1) * pageSize.value;
+                return filteredTransactions.value.slice(start, start + pageSize.value);
+            });
+            
+            const reconcileDelta = computed(() => {
+                if (form.actualBalance === '' || form.actualBalance === null) return 0;
+                return parseFloat((form.actualBalance - formBookBalance.value).toFixed(8));
+            });
+
+            const summaryData = computed(() => {
+                // Use sorted transactions for all calculations
+                const txs = sortedTransactions.value;
+
+                if (viewMode.value === 'coin') {
+                    const map = {};
+                    txs.forEach(t => calculateStats(map, t));
+            const processItem = (item) => {
+                item.amount = parseFloat(item.amount.toFixed(8));
+                if (Math.abs(item.amount) <= 0.0000001) return null;
+                if (item.amount <= 0) item.totalCost = 0;
+                item.avgCost = item.amount > 0 ? item.totalCost / item.amount : 0;
+                const price = prices.value[item.coinSymbol] || 0;
+                item.currentPrice = price;
+                item.currentValue = item.amount * price;
+                item.pnl = item.currentValue - item.totalCost;
+                item.pnlPercent = (item.totalCost > 0.01) ? (item.pnl / item.totalCost) * 100 : 0;
+                return item;
+            };
+                    return Object.values(map).map(processItem).filter(i => i).sort((a,b) => b.currentValue - a.currentValue);
+                }
+                
+                if (viewMode.value === 'coin_location') {
+                const groups = {};
+                    txs.forEach(t => {
+                    if (filterCoin.value) {
+                            if (t.type === 'trade') { 
+                                if (t.fromCoin !== filterCoin.value && t.toCoin !== filterCoin.value) return; 
+                            } else { 
+                                if (t.coin !== filterCoin.value) return; 
+                            }
+                        }
+                        calculateCoinLocationStats(groups, t);
+                    });
+                    
+                    const processItem = (item) => {
+                        item.amount = parseFloat(item.amount.toFixed(8));
+                        if (Math.abs(item.amount) <= 0.0000001) return null;
+                        
+                        if (item.amount <= 0) item.totalCost = 0;
+                        item.avgCost = item.amount > 0 ? item.totalCost / item.amount : 0;
+                        
+                        const price = prices.value[item.coinSymbol] || 0;
+                        item.currentPrice = price;
+                        item.currentValue = item.amount * price;
+                        item.pnl = item.currentValue - item.totalCost;
+                        item.pnlPercent = (item.totalCost > 0.01) ? (item.pnl / item.totalCost) * 100 : 0;
+                        return item;
+                    };
+
+                    return Object.values(groups).map(group => {
+                        const children = Object.values(group.childrenMap).map(processItem).filter(i => i);
+                        let gVal = 0;
+                        let gCost = 0;
+                        children.forEach(c => { 
+                            gVal += c.currentValue; 
+                            gCost += c.totalCost;
+                        });
+                        const gPnl = gVal - gCost;
+                        
+                        return {
+                            name: group.name, 
+                            isGroup: true, 
+                            children: children.sort((a,b) => b.currentValue - a.currentValue),
+                            totalCost: gCost, 
+                            currentValue: gVal, 
+                            pnl: gPnl, 
+                            pnlPercent: gCost > 0 ? (gPnl / gCost) * 100 : 0
+                        };
+                    }).filter(g => g.children.length > 0).sort((a,b) => b.currentValue - a.currentValue);
+                }
+
+                if (viewMode.value === 'location') {
+                    const groups = {};
+                    txs.forEach(t => {
+                        if (filterCoin.value) {
+                            if (t.type === 'trade') { 
+                                if (t.fromCoin !== filterCoin.value && t.toCoin !== filterCoin.value) return; 
+                            } else { 
+                                if (t.coin !== filterCoin.value) return; 
+                            }
+                    }
+                    calculateGroupStats(groups, t);
+                });
+                    const processItem = (item) => {
+                        item.amount = parseFloat(item.amount.toFixed(8));
+                        if (Math.abs(item.amount) <= 0.0000001) return null;
+                        
+                        if (item.amount <= 0) item.totalCost = 0;
+                        item.avgCost = item.amount > 0 ? item.totalCost / item.amount : 0;
+                        
+                        const price = prices.value[item.coinSymbol] || 0;
+                        item.currentPrice = price;
+                        item.currentValue = item.amount * price;
+                        item.pnl = item.currentValue - item.totalCost;
+                        item.pnlPercent = (item.totalCost > 0.01) ? (item.pnl / item.totalCost) * 100 : 0;
+                        return item;
+                    };
+                return Object.values(groups).map(group => {
+                    const children = Object.values(group.childrenMap).map(processItem).filter(i => i);
+                    let gCost = 0; let gVal = 0;
+                    children.forEach(c => { gCost += c.totalCost; gVal += c.currentValue; });
+                    const gPnl = gVal - gCost;
+                    return {
+                            name: group.name, 
+                            isGroup: true, 
+                            children: children.sort((a,b) => b.currentValue - a.currentValue),
+                            totalCost: gCost, 
+                            currentValue: gVal, 
+                            pnl: gPnl, 
+                        pnlPercent: gCost > 0 ? (gPnl / gCost) * 100 : 0
+                    };
+                }).filter(g => g.children.length > 0).sort((a,b) => b.currentValue - a.currentValue);
+                }
+                return [];
+            });
+
+            const totalCost = computed(() => summaryData.value.reduce((sum, i) => sum + i.totalCost, 0));
+            const totalCurrentValue = computed(() => summaryData.value.reduce((sum, i) => sum + i.currentValue, 0));
+            const totalPnL = computed(() => totalCurrentValue.value - totalCost.value);
+            const totalPnLPercent = computed(() => totalCost.value > 0 ? (totalPnL.value / totalCost.value)*100 : 0);
+
+            // 4. Watchers & Lifecycle
+            onMounted(() => {
+                const saved = localStorage.getItem('crypto_transactions');
+                if (saved) transactions.value = JSON.parse(saved);
+                if (transactions.value.length > 0) fetchPrices();
+            });
+
+            watch(transactions, (newVal) => { 
+                localStorage.setItem('crypto_transactions', JSON.stringify(newVal)); 
+            }, { deep: true });
+            
+            watch([searchQuery, pageSize], () => { 
+                currentPage.value = 1; 
+            });
+            
+            watch(webdav, (newVal) => {
+                localStorage.setItem('wd_url', newVal.url);
+                localStorage.setItem('wd_user', newVal.user);
+                localStorage.setItem('wd_pass', newVal.password);
+            }, { deep: true });
+
+            // New: Watcher for proxy url
+            watch(proxyConfig, (newVal) => {
+                localStorage.setItem('custom_proxy_url', newVal.url);
+            }, { deep: true });
+
+            // 5. Actions
+            const updateBookBalance = () => {
+                if (form.type === 'reconcile') {
+                    formBookBalance.value = calcBalanceForLocation(form.platform, form.account, form.coin);
+                }
+            };
+
+            const addTransaction = () => {
+                if (form.type === 'transfer' && (!form.fromPlatform || !form.toPlatform)) return alert("划转请填写来源和目标");
+                if (form.type === 'trade' && (!form.fromCoin || !form.toCoin || !form.totalValue)) return alert("兑换请填写币种和总价值");
+                
+                if (form.type === 'reconcile') {
+                    if (reconcileDelta.value === 0) return alert("余额无变化，无需校准");
+                    const tx = {
+                        id: Date.now().toString(),
+                        date: form.date,
+                        type: reconcileDelta.value > 0 ? 'buy' : 'sell',
+                        coin: form.coin,
+                        platform: form.platform,
+                        account: form.account,
+                        amount: Math.abs(reconcileDelta.value),
+                        price: 0, fee: 0, feeUnit: 'USDT',
+                        note: `余额校准: ${formatNumber(formBookBalance.value)} -> ${form.actualBalance}`
+                    };
+                    transactions.value.push(tx);
+                    clearForm();
+                    return;
+                }
+                
+                const tx = { id: Date.now().toString(), ...form };
+                // Clean up fields
+                if(tx.type === 'transfer') { delete tx.price; delete tx.platform; delete tx.account; delete tx.fromCoin; delete tx.toCoin; delete tx.actualBalance; }
+                else if(tx.type === 'trade') { delete tx.price; delete tx.coin; delete tx.amount; delete tx.fromPlatform; delete tx.actualBalance; }
+                else { delete tx.fromPlatform; delete tx.fromCoin; delete tx.actualBalance; }
+                transactions.value.push(tx);
+                clearForm();
+            };
+            
+            const deleteTransaction = (id) => { 
+                if(confirm("确认删除?")) {
+                    transactions.value = transactions.value.filter(t => t.id !== id);
+                }
+            };
+            
+            const clearForm = () => { 
+                form.price = ''; form.amount = ''; form.note = ''; form.fee = 0; form.feeUnit = 'USDT';
+                form.platform = ''; form.account = ''; form.fromPlatform = ''; form.fromAccount = ''; form.toPlatform = ''; form.toAccount = '';
+                form.fromCoin = ''; form.fromAmount = ''; form.toCoin = ''; form.toAmount = ''; form.totalValue = '';
+                form.actualBalance = ''; formBookBalance.value = 0;
+            };
+            
+            const openReconcileModal = (coinItem = null, groupKey = null) => {
+                reconcileForm.platform = ''; reconcileForm.account = ''; reconcileForm.coin = ''; reconcileForm.actual = '';
+                reconcileData.current = 0; reconcileData.diff = 0;
+                if (coinItem && groupKey) {
+                    const match = groupKey.match(/^(.*?) \((.*?)\)$/);
+                    if (match) { 
+                        reconcileForm.platform = match[1]; 
+                        reconcileForm.account = match[2]; 
+                    } else { 
+                        reconcileForm.platform = groupKey; 
+                    }
+                    reconcileForm.coin = coinItem.name;
+                    calcReconcile(); 
+                }
+                showReconcileModal.value = true;
+            };
+
+            const calcReconcile = () => {
+                if (!reconcileForm.platform || !reconcileForm.account || !reconcileForm.coin) return;
+                // Reuse the main calculation logic for the modal
+                reconcileData.current = calcBalanceForLocation(reconcileForm.platform, reconcileForm.account, reconcileForm.coin);
+                if (reconcileForm.actual !== '') {
+                    reconcileData.diff = parseFloat((reconcileForm.actual - reconcileData.current).toFixed(8));
+                } else {
+                    reconcileData.diff = 0;
+                }
+            };
+
+            const submitReconcile = () => {
+                if (reconcileData.diff === 0) return;
+                const tx = {
+                    id: Date.now().toString(),
+                    date: new Date().toISOString().split('T')[0],
+                    type: reconcileData.diff > 0 ? 'buy' : 'sell',
+                    coin: reconcileForm.coin,
+                    platform: reconcileForm.platform,
+                    account: reconcileForm.account,
+                    amount: Math.abs(reconcileData.diff),
+                    price: 0, fee: 0, feeUnit: 'USDT',
+                    note: `余额校准: ${formatNumber(reconcileData.current)} -> ${reconcileForm.actual}`
+                };
+                transactions.value.push(tx);
+                showReconcileModal.value = false;
+            };
+            
+            const openEditModalFunc = (tx) => {
+                editingTx.value = JSON.parse(JSON.stringify(tx)); 
+                if(!editingTx.value.feeUnit) editingTx.value.feeUnit = 'USDT';
+                // 默认值填充
+                if(!editingTx.value.fromCoin) editingTx.value.fromCoin = '';
+                if(!editingTx.value.toCoin) editingTx.value.toCoin = '';
+                showEditModal.value = true;
+            };
+
+            const saveEdit = () => {
+                if(!editingTx.value) return;
+                const idx = transactions.value.findIndex(t => t.id === editingTx.value.id);
+                if(idx !== -1) {
+                    transactions.value[idx] = editingTx.value;
+                    showEditModal.value = false;
+                }
+            };
+
+            const toggleExpand = (key) => { expandedKeys[key] = !expandedKeys[key]; };
+
+            const getTypeClass = (type, text=false) => {
+                if(type === 'buy') return text ? 'text-success' : 'text-success border-success';
+                if(type === 'sell') return text ? 'text-danger' : 'text-danger border-danger';
+                if(type === 'trade') return text ? 'text-info' : 'text-info border-info';
+                if(type === 'reconcile') return text ? 'text-warning' : 'text-warning border-warning';
+                return text ? 'text-primary' : 'text-primary border-primary';
+            };
+
+            const getTypeName = (type) => {
+                if(type==='buy') return '入账';
+                if(type==='sell') return '出账';
+                if(type==='trade') return '兑换';
+                return '划转';
+            };
+
+            const getBtnClass = (type) => {
+                if(type==='trade') return 'btn-info text-white';
+                if(type==='transfer') return 'btn-secondary';
+                if(type==='sell') return 'btn-danger';
+                if(type==='reconcile') return 'btn-warning';
+                return 'btn-success';
+            };
+
+            const getBtnIcon = (type) => {
+                if(type==='trade') return 'fa-exchange-alt';
+                if(type==='transfer') return 'fa-share'; 
+                if(type==='sell') return 'fa-file-export';
+                if(type==='reconcile') return 'fa-bolt';
+                return 'fa-file-invoice-dollar';
+            };
+
+            const getBtnText = (type) => {
+                if(type==='trade') return '记录兑换';
+                if(type==='transfer') return '记录划转';
+                if(type==='sell') return '记录出账';
+                if(type==='reconcile') return '确认校准';
+                return '记录入账';
+            };
+
+            const formatNumber = (num) => {
+                if (num === undefined || num === null || isNaN(num)) return '0.00';
+                return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+            };
+
+            // 使用 CloudFlare 代理服务来绕过 CORS 跨域限制
+            const fetchPrices = async () => {
+                // 优先使用用户配置的代理，如果没有则提示用户设置
+                const myProxy = proxyConfig.url ? proxyConfig.url : '';
+                
+                if (!myProxy) {
+                    if(confirm("未配置代理地址，无法更新价格。是否前往设置？")) {
+                        showSettingsModal.value = true;
+                    }
+                    return;
+                }
+
+                isLoading.value = true;
+                try {
+                    // 直接请求你的代理，它会去搬运币安的数据回来
+                    const res = await fetch(myProxy);
+                    const data = await res.json();
+                    
+                    const newPrices = {};
+                    data.forEach(i => { 
+                        // 筛选 USDT 交易对
+                        if (i.symbol.endsWith('USDT')) {
+                            newPrices[i.symbol.replace('USDT','')] = parseFloat(i.price); 
+                        }
+                    });
+                    // 补充基础稳定币价格
+                    newPrices['USDT'] = 1.0; 
+                    newPrices['USDC'] = 1.0;
+                    
+                    prices.value = newPrices;
+                    // alert("价格更新成功"); // 如果不想每次弹窗，可以注释掉这行
+                } catch (e) { 
+                    console.error(e);
+                    alert("更新失败: 请检查网络或代理地址配置是否正确"); 
+                } finally { 
+                    isLoading.value = false; 
+                }
+            };
+
+            const saveFile = async (blob, filename, extension) => {
+                try {
+                    if (window.showSaveFilePicker) {
+                        const opts = { suggestedName: filename, types: [{ description: extension.toUpperCase(), accept: extension==='csv'?{'text/csv':['.csv']}:{'application/json':['.json']} }] };
+                        const handle = await window.showSaveFilePicker(opts);
+                        const writable = await handle.createWritable();
+                        await writable.write(blob); await writable.close(); return;
+                    }
+                } catch (e) {}
+                const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = filename; link.click();
+            };
+
+            const exportJSON = async () => {
+                // Use the sorted transaction data directly
+                // The JSON should reflect the in-memory state
+                const blob = new Blob([JSON.stringify(transactions.value, null, 2)], { type: 'application/json' });
+                await saveFile(blob, `Portfolios_backup_${new Date().toISOString().slice(0, 10)}.json`, 'json');
+            };
+
+            const exportCSV = async () => {
+                // Use the standardization function to ensure all columns are present
+                const standardizedData = standardizeTransactions(transactions.value);
+                const csv = Papa.unparse(standardizedData);
+                const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+                await saveFile(blob, `Portfolios_export_${new Date().toISOString().slice(0, 10)}.csv`, 'csv');
+            };
+
+            const importData = (e) => {
+                const file = e.target.files[0]; 
+                if(!file) return;
+                
+                const isCSV = file.name.endsWith('.csv');
+
+                if (isCSV) {
+                    Papa.parse(file, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            try {
+                                // CSV import needs careful type conversion
+                                const parsedData = results.data.map(row => {
+                                    // Convert numeric fields from string to number
+                                    // Handle empty strings safely
+                                    const safeFloat = (val) => (val && val.trim() !== '') ? parseFloat(val) : '';
+                                    
+                                    return {
+                                        ...row,
+                                        price: safeFloat(row.price),
+                                        amount: safeFloat(row.amount),
+                                        fee: safeFloat(row.fee),
+                                        fromAmount: safeFloat(row.fromAmount),
+                                        toAmount: safeFloat(row.toAmount),
+                                        totalValue: safeFloat(row.totalValue),
+                                        actualBalance: safeFloat(row.actualBalance)
+                                        // Strings don't need conversion
+                                    };
+                                });
+                                
+                                if (confirm(`解析出 ${parsedData.length} 条记录。是否覆盖当前数据？`)) {
+                                    transactions.value = parsedData;
+                                }
+                            } catch(err) {
+                                alert("CSV 数据解析错误: " + err.message);
+                            }
+                        },
+                        error: (err) => alert("CSV 读取失败: " + err.message)
+                    });
+                } else {
+                    // JSON Import
+                    const reader = new FileReader();
+                reader.onload = (ev) => { 
+                    try { 
+                            const data = JSON.parse(ev.target.result);
+                            if (confirm(`解析出 ${data.length} 条记录。是否覆盖当前数据？`)) {
+                                transactions.value = data; 
+                            }
+                    } catch(e) { 
+                            alert("JSON 解析失败"); 
+                    } 
+                };
+                    reader.readAsText(file);
+                }
+                // Reset input to allow re-importing same file
+                e.target.value = '';
+            };
+
+            const getAuthHeader = () => 'Basic ' + btoa(webdav.user + ':' + webdav.password);
+            const cloudUpload = async () => { 
+                try { 
+                    await fetch(webdav.url, {
+                        method:'PUT',
+                        headers:{'Authorization':getAuthHeader(),'Content-Type':'application/json'},
+                        body:JSON.stringify(transactions.value)
+                    }); 
+                    alert("上传成功"); 
+                    showCloudModal.value=false; 
+                } catch(e) { 
+                    alert("上传失败"); 
+                }
+            };
+            const cloudDownload = async () => { 
+                try { 
+                    const r = await fetch(webdav.url, {headers:{'Authorization':getAuthHeader()}}); 
+                    transactions.value = await r.json(); 
+                    alert("下载成功"); 
+                    showCloudModal.value=false; 
+                } catch(e) { 
+                    alert("下载失败"); 
+                }
+            };
+
+            return {
+                transactions, form, addTransaction, deleteTransaction, clearForm,
+                filteredTransactions, paginatedTransactions, searchQuery, viewMode, filterCoin, summaryData, formatNumber,
+                uniquePlatforms, uniqueAccounts, uniqueCoins, totalPages, currentPage, pageSize,
+                totalCost, totalCurrentValue, totalPnL, totalPnLPercent,
+                fetchPrices, isLoading, exportJSON, exportCSV, importData, showCloudModal, webdav, cloudUpload, cloudDownload,
+                expandedKeys, toggleExpand, getTypeClass, getTypeName, getBtnClass, getBtnIcon, getBtnText,
+                showEditModal, editingTx, openEditModalFunc, saveEdit,
+                showReconcileModal, openReconcileModal, reconcileForm, reconcileData, calcReconcile, submitReconcile,
+                formBookBalance, updateBookBalance, reconcileDelta,
+                showSettingsModal, proxyConfig // Export new variables
+            };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>
