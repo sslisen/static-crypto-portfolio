@@ -11,7 +11,8 @@ Quick Start (快速开始):
 下载 index.html 直接打开就能用，也可以部署到自己的Cloudflare Pages中
 
 DEMO：
-Cloudflare Pages 演示链接：
+Cloudflare Pages 演示链接：https://static-crypto-portfolio.pages.dev/
+不愿意自己部署Pages的，也可以直接使用DEMO，同样的DEMO的数据也是本地的。
 
 📊 实时价格配置 (Real-time Price Setup)
 
