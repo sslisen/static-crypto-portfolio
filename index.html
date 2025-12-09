@@ -1,5 +1,5 @@
-<!-- Version: v25 -->
-<!-- Date: 2025-12-08 -->
+<!-- Version: v26 -->
+<!-- Date: 2025-12-09 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -106,7 +106,6 @@
                         <i class="fas fa-cloud me-1"></i>云同步
                     </button>
 
-                    <!-- 新增：设置按钮 -->
                     <button class="btn btn-outline-light btn-sm" @click="showSettingsModal=true" title="系统设置">
                         <i class="fas fa-cog"></i>
                     </button>
@@ -157,7 +156,14 @@
             <div class="col-lg-5">
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
+                        <div>
                         <span><i class="fas fa-edit me-2"></i>快速记账</span>
+                            <!-- 新增：显示导入信息 -->
+                            <div v-if="lastImportInfo.time" class="text-muted fw-normal mt-1" style="font-size: 0.7rem;">
+                                <i class="fas fa-history me-1"></i>源自: {{ lastImportInfo.name }} 
+                                <span class="ms-1">({{ lastImportInfo.time }})</span>
+                            </div>
+                        </div>
                         <button class="btn btn-sm btn-link" @click="clearForm">重置</button>
                     </div>
                     <div class="card-body">
@@ -717,7 +723,7 @@
         </div>
     </div>
 
-    <!-- ⚡ 系统设置 Modal (新增) -->
+    <!-- ⚡ 系统设置 Modal -->
     <div v-if="showSettingsModal" class="modal fade show" tabindex="-1" style="display: block; background-color: rgba(0,0,0,0.5);">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content shadow">
@@ -752,7 +758,7 @@
             const showCloudModal = ref(false);
             const showEditModal = ref(false);
             const showReconcileModal = ref(false);
-            const showSettingsModal = ref(false); // New
+            const showSettingsModal = ref(false); 
             const editingTx = ref(null);
             const searchQuery = ref("");
             const viewMode = ref("coin"); 
@@ -760,6 +766,9 @@
             const expandedKeys = reactive({});
             const currentPage = ref(1);
             const pageSize = ref(10);
+            
+            // 新增：记录最后一次导入的文件信息
+            const lastImportInfo = ref({ name: '', time: '' }); 
             
             // Reconcile variables
             const formBookBalance = ref(0);
@@ -784,7 +793,7 @@
                 password: localStorage.getItem('wd_pass') || ''
             });
 
-            // New: Proxy Configuration
+            // Proxy Configuration
             const proxyConfig = reactive({
                 url: localStorage.getItem('custom_proxy_url') || '' 
             });
@@ -1257,6 +1266,11 @@
             onMounted(() => {
                 const saved = localStorage.getItem('crypto_transactions');
                 if (saved) transactions.value = JSON.parse(saved);
+                
+                // 新增：读取上次导入信息
+                const savedInfo = localStorage.getItem('last_import_info');
+                if (savedInfo) lastImportInfo.value = JSON.parse(savedInfo);
+
                 if (transactions.value.length > 0) fetchPrices();
             });
 
@@ -1274,7 +1288,7 @@
                 localStorage.setItem('wd_pass', newVal.password);
             }, { deep: true });
 
-            // New: Watcher for proxy url
+            // Watcher for proxy url
             watch(proxyConfig, (newVal) => {
                 localStorage.setItem('custom_proxy_url', newVal.url);
             }, { deep: true });
@@ -1538,6 +1552,10 @@
                                 
                                 if (confirm(`解析出 ${parsedData.length} 条记录。是否覆盖当前数据？`)) {
                                     transactions.value = parsedData;
+                                    
+                                    // 新增：更新导入信息 (CSV部分)
+                                    lastImportInfo.value = { name: file.name, time: new Date().toLocaleString() };
+                                    localStorage.setItem('last_import_info', JSON.stringify(lastImportInfo.value));
                                 }
                             } catch(err) {
                                 alert("CSV 数据解析错误: " + err.message);
@@ -1553,6 +1571,10 @@
                             const data = JSON.parse(ev.target.result);
                             if (confirm(`解析出 ${data.length} 条记录。是否覆盖当前数据？`)) {
                                 transactions.value = data; 
+                                
+                                // 新增：更新导入信息 (JSON部分)
+                                lastImportInfo.value = { name: file.name, time: new Date().toLocaleString() };
+                                localStorage.setItem('last_import_info', JSON.stringify(lastImportInfo.value));
                             }
                     } catch(e) { 
                             alert("JSON 解析失败"); 
@@ -1599,7 +1621,8 @@
                 showEditModal, editingTx, openEditModalFunc, saveEdit,
                 showReconcileModal, openReconcileModal, reconcileForm, reconcileData, calcReconcile, submitReconcile,
                 formBookBalance, updateBookBalance, reconcileDelta,
-                showSettingsModal, proxyConfig // Export new variables
+                showSettingsModal, proxyConfig,
+                lastImportInfo
             };
         }
     }).mount('#app');
