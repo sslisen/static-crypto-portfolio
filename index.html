@@ -1,5 +1,5 @@
-<!-- Version: v26 -->
-<!-- Date: 2025-12-09 -->
+<!-- Version: v27 -->
+<!-- Date: 2025-12-10 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -349,7 +349,11 @@
                         <table class="table table-hover table-striped mb-0" style="font-size: 0.9rem;">
                             <thead class="table-light">
                                 <tr>
-                                    <th>类型/时间</th>
+                                    <!-- 修改点：增加点击排序功能 -->
+                                    <th @click="toggleSort" style="cursor: pointer; user-select: none;" title="点击按时间排序">
+                                        类型/时间 
+                                        <i class="fas ms-1" :class="sortOrder === 'asc' ? 'fa-sort-up' : 'fa-sort-down'"></i>
+                                    </th>
                                     <th>详情</th>
                                     <th>平台/账户</th>
                                     <th class="text-end">操作</th>
@@ -767,6 +771,9 @@
             const currentPage = ref(1);
             const pageSize = ref(10);
             
+            // 新增：排序状态，默认为desc（最新在前，更符合记账查看习惯）
+            const sortOrder = ref('desc');
+            
             // 新增：记录最后一次导入的文件信息
             const lastImportInfo = ref({ name: '', time: '' }); 
             
@@ -1076,6 +1083,7 @@
             };
 
             // 3. Computed Properties
+            // Important: This property MUST remain chronological (ASC) for average cost calculations to work correctly.
             const sortedTransactions = computed(() => {
                 // Global sort ensures history is processed in chronological order
                 return [...transactions.value].sort((a,b) => new Date(a.date) - new Date(b.date));
@@ -1111,12 +1119,16 @@
                 return [...s];
             });
 
-            // Fixed Search (Haystack Method)
+            // Fixed Search (Haystack Method) with Sorting Support
             const filteredTransactions = computed(() => {
                 const q = searchQuery.value.toLowerCase().trim();
-                if (!q) return sortedTransactions.value;
+                
+                // Start with the chronologically sorted list (data source)
+                let list = sortedTransactions.value;
 
-                return sortedTransactions.value.filter(t => {
+                // 1. Filter
+                if (q) {
+                    list = list.filter(t => {
                     const content = [
                         t.coin, t.platform, t.account, 
                         t.fromCoin, t.toCoin, 
@@ -1127,6 +1139,15 @@
                     
                     return content.includes(q);
                 });
+                }
+
+                // 2. Sort for Display (Chronological ASC is default, create new array if DESC is needed)
+                if (sortOrder.value === 'desc') {
+                    // Create a copy and reverse it to avoid mutating original source if it was a reference
+                    return [...list].reverse();
+                }
+                
+                return list;
             });
 
             const totalPages = computed(() => Math.ceil(filteredTransactions.value.length / pageSize.value) || 1);
@@ -1287,6 +1308,11 @@
                 localStorage.setItem('wd_user', newVal.user);
                 localStorage.setItem('wd_pass', newVal.password);
             }, { deep: true });
+
+            // 5. Actions
+            const toggleSort = () => {
+                sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
+            };
 
             // Watcher for proxy url
             watch(proxyConfig, (newVal) => {
@@ -1622,7 +1648,8 @@
                 showReconcileModal, openReconcileModal, reconcileForm, reconcileData, calcReconcile, submitReconcile,
                 formBookBalance, updateBookBalance, reconcileDelta,
                 showSettingsModal, proxyConfig,
-                lastImportInfo
+                lastImportInfo,
+                sortOrder, toggleSort // Export sort vars
             };
         }
     }).mount('#app');
